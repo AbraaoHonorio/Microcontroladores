@@ -1,0 +1,296 @@
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*              MODIFICAÇÕES PARA USO COM 12F675                   *
+;*                FEITAS PELO PROF. MARDSON                        *
+;*                    FEVEREIRO DE 2016                            *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+ 
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                           I2C CLIENT                            *
+;*                           CLIENTE                               *
+;*         DESENVOLVIDO PELA MOSAICO ENGENHARIA E CONSULTORIA      *
+;*   VERSÃO: 1.0                           DATA: 17/06/03          *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                     DESCRIÇÃO DO ARQUIVO                        *
+;*-----------------------------------------------------------------*
+;*   MODELO PARA O PIC 12F675                                      *
+;*                                                                 *
+;*                                                                 *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+ 
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                     ARQUIVOS DE DEFINIÇÕES                      *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+#INCLUDE <P12F675.INC>  ;ARQUIVO PADRÃO MICROCHIP PARA 12F675
+ 
+    __CONFIG _BODEN_OFF & _CP_OFF & _PWRTE_ON & _WDT_OFF & _MCLRE_ON & _INTRC_OSC_NOCLKOUT
+ 
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                    PAGINAÇÃO DE MEMÓRIA                         *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;DEFINIÇÃO DE COMANDOS DE USUÁRIO PARA ALTERAÇÃO DA PÁGINA DE MEMÓRIA
+#DEFINE BANK0       BCF STATUS,RP0  ;SETA BANK 0 DE MEMÓRIA
+#DEFINE BANK1       BSF STATUS,RP0  ;SETA BANK 1 DE MAMÓRIA
+ 
+; CONFIGURAÇÕES PARA LED
+#DEFINE LIGA_LED    BSF GPIO,GP5    ;LIGA O LED
+#DEFINE DESLIGA_LED BCF GPIO,GP5    ;DESLIGADA O LED
+
+; CONFIGURÇÕES PARA SDA
+#DEFINE SDA         GPIO,GP1  ; CONFIGURANDO O SDA
+#DEFINE SDA_ENTRADA BSF TRISIO,1  ; CONFIGURAÇÃO PARA O SDA SEJA ENTRADA
+#DEFINE SDA_SAIDA   BCF TRISIO,1  ; CONFIGURAÇÃO PARA O SDA SEJA SAÍDA
+; CONFIGURÇÕES PARA SCL
+#DEFINE SCL         GPIO,GP0   ; CONFIGURANDO O SDA
+#DEFINE SCL_ENTRADA BSF TRISIO,0 ; CONFIGURAÇÃO PARA O SCL SEJA ENTRADA
+#DEFINE SCL_SAIDA   BCF TRISIO,0   ; CONFIGURAÇÃO PARA O SCL SEJA SAÍDA
+    
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                         VARIÁVEIS                               *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; DEFINIÇÃO DOS NOMES E ENDEREÇOS DE TODAS AS VARIÁVEIS UTILIZADAS
+; PELO SISTEMA
+ 
+    CBLOCK  0X20    ;ENDEREÇO INICIAL DA MEMÓRIA DE
+                    ;USUÁRIO
+        W_TEMP      ;REGISTRADORES TEMPORÁRIOS PARA USO
+        STATUS_TEMP ;JUNTO ÀS INTERRUPÇÕES
+ 
+        ;NOVAS VARIÁVEIS
+        PACOTE ; VARIAVEL QUE VAI RECEBER OS VALORES DO MASTER
+        CONTADOR_BIT ; VARIAVEL PARA CONTADOR
+	; VARIÁVEIS PARA DELAY
+	TIMER
+	TIMER1
+	TEMP
+    ENDC            ;FIM DO BLOCO DE MEMÓRIA
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                        FLAGS INTERNOS                           *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; DEFINIÇÃO DE TODOS OS FLAGS UTILIZADOS PELO SISTEMA
+ 
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                         CONSTANTES                              *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; DEFINIÇÃO DE TODAS AS CONSTANTES UTILIZADAS PELO SISTEMA
+ 
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                           ENTRADAS                              *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; DEFINIÇÃO DE TODOS OS PINOS QUE SERÃO UTILIZADOS COMO ENTRADA
+; RECOMENDAMOS TAMBÉM COMENTAR O SIGNIFICADO DE SEUS ESTADOS (0 E 1)
+ 
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                           SAÍDAS                                *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; DEFINIÇÃO DE TODOS OS PINOS QUE SERÃO UTILIZADOS COMO SAÍDA
+; RECOMENDAMOS TAMBÉM COMENTAR O SIGNIFICADO DE SEUS ESTADOS (0 E 1)
+ 
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                       VETOR DE RESET                            *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+ 
+    ORG 0X00            ;ENDEREÇO INICIAL DE PROCESSAMENTO
+    GOTO    INICIO
+   
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                    INÍCIO DA INTERRUPÇÃO                        *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; ENDEREÇO DE DESVIO DAS INTERRUPÇÕES. A PRIMEIRA TAREFA É SALVAR OS
+; VALORES DE "W" E "STATUS" PARA RECUPERAÇÃO FUTURA
+ 
+    ORG 0X04            ;ENDEREÇO INICIAL DA INTERRUPÇÃO
+    MOVWF   W_TEMP      ;COPIA W PARA W_TEMP
+    SWAPF   STATUS,W
+    MOVWF   STATUS_TEMP ;COPIA STATUS PARA STATUS_TEMP
+ 
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                    ROTINA DE INTERRUPÇÃO                        *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; AQUI SERÁ ESCRITA AS ROTINAS DE RECONHECIMENTO E TRATAMENTO DAS
+; INTERRUPÇÕES
+ 
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                 ROTINA DE SAÍDA DA INTERRUPÇÃO                  *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; OS VALORES DE "W" E "STATUS" DEVEM SER RECUPERADOS ANTES DE
+; RETORNAR DA INTERRUPÇÃO
+ 
+SAI_INT
+    SWAPF   STATUS_TEMP,W
+    MOVWF   STATUS      ;MOVE STATUS_TEMP PARA STATUS
+    SWAPF   W_TEMP,F
+    SWAPF   W_TEMP,W    ;MOVE W_TEMP PARA W
+    RETFIE
+ 
+ 
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                   ROTINAS E SUBROTINAS                      *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+; CADA ROTINA OU SUBROTINA DEVE POSSUIR A DESCRIÇÃO DE FUNCIONAMENTO
+; E UM NOME COERENTE ÀS SUAS FUNÇÕES.
+ 
+; A FUNÇÃO PARA ESPERA SUBIR DO SCL
+ESPERA_SUBIR_SCL  
+    BTFSS SCL ; TESTA SE O GP0 FOI PARA 1
+    GOTO $-1       ; SENÃO É 1, VOLTA
+    RETURN 
+   
+; A FUNÇÃO PARA ESPERA DESCER DO SCL
+ESPERA_DESCER_SCL
+    BTFSC SCL ; TESTA SE O GP1 FOI PARA 0
+    GOTO $-1       ; SENÃO É 0, VOLTA
+    RETURN
+   
+; A FUNÇÃO PARA ESPERA SUBIR DO SDA
+ESPERA_SUBIR_SDA  
+    BTFSS SDA ; TESTA SE O GP1 FOI PARA 1
+    GOTO $-1       ; SENÃO É 1, VOLTA
+    RETURN 
+   
+; A FUNÇÃO PARA ESPERA DESCER
+ESPERA_DESCER_SDA
+    BTFSC SDA   ; TESTA SE O GP1 FOI PARA 0
+    GOTO $-1       ; SENÃO É 1, VOLTA
+    RETURN
+   
+SETA_UM
+    BSF PACOTE, 0 ; SETO O VALOR DO BIT0 PARA 1
+   
+    RETURN ; ESPERA O VALOR DO CLOCK SUBIR NOVAMENTE
+ 
+SETA_ZERO
+    BCF PACOTE, 0 ; SETO O VALOR DO BIT0 PARA 0
+   
+    RETURN ; ESPERA O VALOR DO CLOCK SUBIR NOVAMENTE
+ 
+SDA_SAIDA_LIGA_LED_ENVIA_ACK
+    BANK1               ;ALTERA PARA O BANCO 1
+    SDA_SAIDA   ; COLOCANDO SDA COMO SAÍDA
+    
+    BANK0               ;ALTERA PARA O BANCO 0
+    LIGA_LED    ; LIGA O LED
+    ; REQUISITO DO TRABALHO
+    
+    BCF SDA ; COLOCANDO SDA EM ZERO
+    ;CALL    DELAY_40MS ; TEMPO DE ESPERA PARA PODER SICRONIZAR
+    
+    BANK1       ; ALTERA PARA O BANCO 1
+    SDA_ENTRADA ; SETANDO SDA PARA ENTRADA
+       
+    SCL_SAIDA
+    BCF     SCL ; SETANDO O CLOCK(SCL PARA ZERO)
+    BANK0       ; ALTERA PARA O BANCO 0
+    
+    CALL DELAY_200MS
+    DESLIGA_LED ; DESLISGA LED
+    
+    ;DEFINIDO VALORES DE ENTRADA
+    CLRF    PACOTE  ; ZERANDO TODOS OS BITS DOS VALORES DA VÁRIVAVEL
+    CLRF    CONTADOR_BIT ; ZERANDO TODOS OS BITS DOS VALORES DA VÁRIAVEL
+    MOVLW   .63
+    MOVWF   TIMER
+    MOVLW   .157
+    MOVWF   TIMER1
+    BANK1
+    SCL_ENTRADA ; SETANDO O SCL COMO ENTRADA
+    BANK0       ;ALTERA PARA O BANCO 0
+    
+    RETURN
+    
+    
+DELAY_200MS
+    DECFSZ  TIMER, F
+    GOTO    $+2
+    DECFSZ  TIMER1, F
+    GOTO    DELAY_200MS
+
+            ;2 CYCLES
+    GOTO    $+1
+    RETURN
+
+    
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                     INICIO DO PROGRAMA                          *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+   
+INICIO
+    BANK1               ;ALTERA PARA O BANCO 1
+    MOVLW   B'00000011' ;CONFIGURA TODAS AS PORTAS DO GPIO (PINOS)
+    MOVWF   TRISIO      ;COMO SAÍDAS
+    CLRF    ANSEL       ;DEFINE PORTAS COMO DIGITAL I/O
+    MOVLW   B'00000100'
+    MOVWF   OPTION_REG  ;DEFINE OPÇÕES DE OPERAÇÃO
+    MOVLW   B'00000000'
+    MOVWF   INTCON      ;DEFINE OPÇÕES DE INTERRUPÇÕES
+    BANK0               ;RETORNA PARA O BANCO
+    MOVLW   B'00000111'
+    MOVWF   CMCON       ;DEFINE O MODO DE OPERAÇÃO DO COMPARADOR ANALÓGICO
+   
+  
+    
+    ;     DEFINIDO VALORES DE ENTRADA
+
+    CLRF    PACOTE  ; ZERANDO TODOS OS BITS DOS VALORES DA VÁRIVAVEL
+    CLRF    CONTADOR_BIT    ; ZERANDO TODOS OS BITS DOS VALORES DA VÁRIAVEL
+    MOVLW   .63 
+    MOVWF   TIMER
+    MOVLW   .157
+    MOVWF   TIMER1
+    CLRF    GPIO
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                     INICIALIZAÇÃO DAS VARIÁVEIS                 *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+ 
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                     ROTINA PRINCIPAL                            *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+MAIN
+      
+    
+    ;CORPO DA ROTINA PRINCIPAL
+   
+    ; TESTA O START BIT  - VERIFICA SE HOUVE SUBIDA NO SDA E DESCIDA NO SCL
+    CALL ESPERA_SUBIR_SDA
+    CALL ESPERA_DESCER_SDA
+    BTFSS SCL ; TESTANDO SE O CLOCK ESTÁ EM (SLC=1)
+    GOTO MAIN
+    ; FIM DO START BIT 
+    
+   CALL ESPERA_DESCER_SCL ; ESPERANDO O CLOCK SUBIR
+    ; PASSANDO OS VALORES PARA CONTADOR
+    MOVLW .7                 
+    MOVWF CONTADOR_BIT ; PASSANDO O VALOR DE 8 PARA O CONTADOR(8BITS)
+    CLRF  PACOTE
+ 
+; PEGAR OS VALORES VINDO DO MASTER
+ESPERA_CLOCK
+        CALL ESPERA_SUBIR_SCL ; TESTANDO SE CLOCK ESTÁ EM ALTA (SLC=1)
+        BTFSS SDA ; TESTANDO SE O SDA ESTÁ EM (SLC=1)
+        CALL SETA_ZERO ; RECEBEU ZERO DO MASTER (MASTER -> ENVIA, PACOTE RECEBE 0 DO MASTER
+    BTFSC SDA ; TESTANDO SE O SDA ESTÁ EM (SLC=0)
+        CALL SETA_UM ; RECEBEU UM DO MASTER (MASTER -> ENVIA, PACOTE RECEBE 1 DO MASTER)
+        BCF STATUS,C
+        RLF PACOTE ; ROTACIONO OS BITS DE PACOTE
+    CALL ESPERA_DESCER_SCL 
+    DECFSZ CONTADOR_BIT ; DECREMENTA O CONTADOR E SALTA SE FOR ZERO
+        GOTO ESPERA_CLOCK
+    
+    ; OITAVO BIT
+    CALL ESPERA_SUBIR_SCL ; ESPERANDO O CLOCK SUBIR
+    CALL ESPERA_DESCER_SCL ; ESPERANDO O CLOCK DESCER
+   
+    ;COMPARACAO SE O VALOR VINDO DO MASTER É IGUAL AO MEU VALOR 07
+    BCF   STATUS, C ; LIMPANDO O QUERY
+    RRF   PACOTE  ; ROTACIONO OS BITS DE PACOTE
+    
+    MOVLW .7 ; ENVINADO O MEU VALOR PARA O WORK
+    SUBWF PACOTE, W ; SUBTRAÍ PACOTE DO WORK
+    BTFSC STATUS, Z ;  VERIFICA SE O BIT Z, DO REGISTRADOR STATUS É 1 
+        CALL SDA_SAIDA_LIGA_LED_ENVIA_ACK ; COLOCANDO SDA COMO SAÍDA E LIGANDO LED
+    GOTO MAIN
+ 
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+;*                       FIM DO PROGRAMA                           *
+;* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+ 
+    END
